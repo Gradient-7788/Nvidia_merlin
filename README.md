@@ -7,20 +7,20 @@
 ## System Architecture
 
 ```
-User Events (Synthetic / 250k implicit signals)
+User Events (synthetic latent-taste simulator, 150k generated)
      │
      ▼
 ┌─────────────────────────────────┐
-│   Feature Pipeline (NVTabular)  │  MinMax normalization, categorical
-│   data_pipeline.py              │  hashing, user/item aggregations
+│   Feature Pipeline (NVTabular-  │  train-only statistics: MinMax,
+│   style, data_pipeline.py)      │  log counts, categorical IDs
 └─────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────┐
 │   Candidate Generation          │  Two-Tower Dual-Encoder + FAISS
-│   (Stage 1 Retrieval)           │  ANN vector index search
+│   (Stage 1 Retrieval)           │  exact inner-product index
 └─────────────────────────────────┘
-     │  10,000 candidates (< 0.05 ms)
+     │  top-100 candidates (< 0.1 ms)
      ▼
 ┌─────────────────────────────────┐
 │   Ranking Model (Stage 2)       │  Deep & Cross Network (DCN-v2)
@@ -29,7 +29,7 @@ User Events (Synthetic / 250k implicit signals)
      │
      ▼
    Top 20 Recommendations
-   (with MMR diversity re-ranking)
+   (optional MMR diversity re-ranking)
 ```
 
 ---
@@ -65,8 +65,8 @@ Classic collaborative filtering with learned user/item embeddings and bias terms
 ### 2. Two-Tower Dual-Encoder (Candidate Retrieval)
 - **User Tower**: User ID embedding + gender embedding + continuous features (age, activity) → MLP → L2-normalized vector
 - **Item Tower**: Item ID embedding + category embedding + continuous features (price, quality, popularity) → MLP → L2-normalized vector
-- **Training**: In-batch softmax loss with temperature scaling (τ = 0.07)
-- **Inference**: All item embeddings indexed in **FAISS** (`IndexFlatIP`) for sub-millisecond ANN retrieval
+- **Training**: In-batch softmax loss with temperature scaling (τ = 0.07) and logQ popularity correction; ID dropout (p = 0.1) into a reserved UNKNOWN-user embedding for cold start
+- **Inference**: All item embeddings indexed in **FAISS** (`IndexFlatIP`, exact inner-product search = cosine on unit vectors)
 
 ### 3. Neural Collaborative Filtering (NeuMF)
 Fuses two pathways:
@@ -92,8 +92,8 @@ The investigation engine (`investigation.py`) empirically evaluates **9 key topi
 | 2 | **Two-Tower Retrieval Model** | In-batch softmax loss, FAISS recall |
 | 3 | **Neural Collaborative Filtering** | AUC comparison vs MF |
 | 4 | **Deep Ranking Model (DCN)** | AUC, cross-feature interaction quality |
-| 5 | **Negative Sampling** | Uniform vs In-Batch vs Popularity-Hard negatives (AUC, Recall@50, convergence epochs) |
-| 6 | **Cold-Start** | Warm vs Cold user/item HitRate@20 and NDCG@20, content-based fallback recovery |
+| 5 | **Negative Sampling** | Uniform vs In-Batch vs In-Batch + mined hard negatives (AUC, Recall@50, convergence epochs on validation) |
+| 6 | **Cold-Start** | Warm vs cold users (same test window), content-based fallback vs popularity fallback |
 | 7 | **Popularity Bias** | Gini concentration coefficient, top-10% exposure share, catalog coverage rate |
 | 8 | **Diversity** | MMR λ trade-off curve: Relevance NDCG@20 vs Intra-List Diversity (ILD) |
 | 9 | **Latency** | Candidate retrieval p50/p95/p99 (ms) vs Deep ranking scoring latency |
@@ -134,11 +134,11 @@ python3 investigation.py
 ```
 
 This will:
-- Generate 150k synthetic user events across 3,000 users and 5,000 items
+- Generate 150k synthetic user events across 3,000 users and 5,000 items (latent-taste simulator)
 - Train all 4 models (MF, Two-Tower, NCF, DCN)
 - Build FAISS vector index
 - Run all 9 investigation benchmarks
-- Print the full JSON results summary
+- Write every metric to `results.json` and print it (nothing is hardcoded)
 
 ### 3. Start the API Server
 
@@ -182,48 +182,54 @@ Returns the full investigation benchmarks including model AUCs, negative samplin
 
 ## Key Design Decisions
 
-1. **Synthetic Data with Realistic Dynamics**: Power-law item popularity distribution (α=1.2) creates natural long-tail effects. Cold-start entities (5% of users/items) are explicitly isolated from training data.
-
-2. **In-Batch Softmax Loss**: The Two-Tower model uses temperature-scaled in-batch negatives rather than random sampling, which provides harder negatives and faster convergence (documented in the negative sampling investigation).
-
-3. **FAISS for Sub-Millisecond Retrieval**: All item tower embeddings are indexed using `IndexFlatIP` (inner product / cosine similarity) for exact nearest-neighbor search. For production scale, this can be swapped to `IndexIVFFlat` or `IndexHNSW`.
-
-4. **DCN-v2 Cross Network**: The ranking model uses explicit feature crosses (bounded-degree polynomial interactions) parallel to a deep MLP, capturing both memorization and generalization patterns.
-
-5. **MMR Diversity Re-Ranking**: Post-processing with Maximal Marginal Relevance allows tunable diversity via the λ parameter, balancing relevance against intra-list diversity.
+1. **Latent-taste synthetic data.** Users have a 10-dim category-taste vector, partly explained by their demographic segment (age bucket × gender). Exposure probability ∝ popularity^0.7 × exp(1.5 · taste[category]); the binary label (e.g. purchase after view) depends on taste, quality and price plus noise. Item popularity follows a power law (α = 1.2). An oracle that knows the true signal reaches AUC ≈ 0.93, so there is real structure to learn. The last 5% of user IDs and items never appear in training (cold-start).
+2. **Temporal 72 / 8 / 20 split.** Train on the oldest events, select epochs on validation, report on the most recent 20%. Feature statistics (popularity, activity, scaling bounds) are fitted on train only.
+3. **In-batch softmax with logQ correction.** In-batch negatives are sampled in proportion to popularity; subtracting log q(item) from each logit (Yi et al., 2019) stops popular items from being over-penalised.
+4. **FAISS `IndexFlatIP`.** Exact search: at 5,000 × 32 dims brute force is sub-0.1 ms with perfect recall. `IndexIVFFlat` / `IndexHNSW` are the swap at larger catalogs.
+5. **DCN-v2 cross network.** Full-rank cross layers x₍ₗ₊₁₎ = x₀ ⊙ (Wₗxₗ + bₗ) + xₗ; two layers give explicit feature interactions up to degree 3, in parallel with a deep MLP.
+6. **Two-stage scoring.** Final score ≈ log P(engage) = similarity/τ (stage 1, exposure) + log P(convert | exposed) (stage 2, DCN-v2).
+7. **Cold-start via ID dropout.** During two-tower training 10% of user IDs are replaced by a reserved UNKNOWN id, so that embedding learns a content-only (demographic) user representation that new users fall back to.
+8. **MMR re-ranking.** argmax λ·rel(i) − (1−λ)·maxⱼ∈S sim(i, j), with similarity from item-tower embeddings.
 
 ---
 
-## Sample Results
+## Results (from `results.json`, seed 42)
+
+Dataset: 132,977 warm events (train 95,743 / val 10,638 / test 26,596), 7,569 cold-user events, positive rate 0.833.
 
 ```
-Model AUC Comparison:
-  Popularity Baseline:             0.582
-  Matrix Factorization:            0.694
-  Two-Tower Model:                 0.741
-  Neural Collaborative Filtering:  0.778
-  Deep Ranking Model:              0.824
+Ranking AUC on the test period (pointwise labels):
+  Popularity Baseline:             0.525
+  Two-Tower (dot product):         0.717
+  Neural Collaborative Filtering:  0.810
+  DCN-v2 Ranking Model:            0.833
+  Matrix Factorization:            0.843
 
-Negative Sampling Impact:
-  Uniform Random:      AUC 0.684, Recall@50 0.412 (12 epochs)
-  In-Batch Softmax:    AUC 0.765, Recall@50 0.589 ( 6 epochs)
-  Popularity Hard:     AUC 0.792, Recall@50 0.634 ( 4 epochs)
+Two-tower retrieval (new positives, seen items excluded):
+  HitRate@20 0.652 | Recall@50 0.304 | NDCG@20 0.160
 
-Cold-Start Degradation:
-  Warm Users/Items:    HitRate@20 0.428
-  Cold Users:          HitRate@20 0.142 (-67%)
-  Cold Items:          HitRate@20 0.185 (-57%)
-  + Content Fallback:  HitRate@20 0.310 (recovered +68%)
+Negative sampling (test Recall@50 at best-validation epoch; epochs to reach 98% of best val Recall@50):
+  Uniform Random Negatives           Recall@50 0.298 | AUC 0.686 | 7 epochs
+  In-Batch Softmax Negatives         Recall@50 0.299 | AUC 0.724 | 5 epochs
+  In-Batch + Mined Hard Negatives    Recall@50 0.298 | AUC 0.712 | 4 epochs
 
-Popularity Bias:
-  Gini Coefficient:    0.576 (moderate concentration)
-  Top 10% Exposure:    44.7%
-  Catalog Coverage:    35.3%
+Cold-start users (same test window, no filtering):
+  Warm Users                                           HitRate@20 0.775
+  Cold Users (untrained ID embedding)                  HitRate@20 0.581
+  Cold Users + Content Fallback (UNKNOWN-id embedding) HitRate@20 0.730
+  Cold Users + Popularity Fallback                     HitRate@20 0.696
+  -> cold users lose 25.0% HitRate@20; the content fallback recovers 76.7% of that gap
 
-Latency (p95):
-  FAISS Retrieval:     0.049 ms
-  DCN Deep Ranking:    0.257 ms
+Popularity bias of retrieval (top-20 for 800 users):
+  Gini 0.98 | top-10% item exposure 1.0 | catalog coverage 0.058
+
+Latency (in-process, CPU, 200 runs):
+  FAISS retrieval (top-100 of 5k): p50 0.043 ms | p95 0.08 ms
+  DCN-v2 scoring (100 candidates): p50 0.197 ms | p95 0.265 ms
+  End-to-end GET /api/recommend (FastAPI TestClient, incl. HTTP + JSON): p50 ≈ 4.9 ms | p95 ≈ 8.1 ms
 ```
+
+Honest notes: MF slightly beats DCN-v2 on AUC here because the simulator's signal is mostly a user × category interaction, which MF captures directly. Negative-sampling strategies end at similar Recall@50; the difference is convergence speed. Retrieval is strongly popularity-concentrated (low coverage) — MMR raises intra-list diversity at a small NDCG cost.
 
 ---
 
