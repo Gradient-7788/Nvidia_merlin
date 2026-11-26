@@ -1,0 +1,149 @@
+{
+  "dataset": {
+    "warm_events": 132977,
+    "train_events": 95743,
+    "val_events": 10638,
+    "test_events": 26596,
+    "cold_user_events": 7569,
+    "positive_rate": 0.833,
+    "split": "temporal 72/8/20 (train/val/test)"
+  },
+  "models_auc": {
+    "Popularity Baseline": 0.5255,
+    "Matrix Factorization": 0.8427,
+    "Two-Tower Model": 0.717,
+    "Neural Collaborative Filtering": 0.8103,
+    "Deep Ranking Model": 0.833
+  },
+  "two_tower_retrieval": {
+    "HitRate@20": 0.6525,
+    "Recall@50": 0.3036,
+    "NDCG@20": 0.1603
+  },
+  "negative_sampling": {
+    "Uniform Random Negatives": {
+      "AUC": 0.6862,
+      "Recall@50": 0.2977,
+      "Convergence Epochs": 7,
+      "Val Recall@50 by epoch": [
+        0.1853,
+        0.2439,
+        0.255,
+        0.271,
+        0.2761,
+        0.2725,
+        0.2859,
+        0.283,
+        0.2844,
+        0.2794,
+        0.2732,
+        0.276
+      ]
+    },
+    "In-Batch Softmax Negatives": {
+      "AUC": 0.7238,
+      "Recall@50": 0.2987,
+      "Convergence Epochs": 5,
+      "Val Recall@50 by epoch": [
+        0.2331,
+        0.2694,
+        0.2712,
+        0.281,
+        0.2822,
+        0.2878,
+        0.2872,
+        0.2783,
+        0.2763,
+        0.2685,
+        0.2699,
+        0.2691
+      ]
+    },
+    "In-Batch + Mined Hard Negatives": {
+      "AUC": 0.7115,
+      "Recall@50": 0.2985,
+      "Convergence Epochs": 4,
+      "Val Recall@50 by epoch": [
+        0.2307,
+        0.261,
+        0.2726,
+        0.2894,
+        0.2812,
+        0.2806,
+        0.2892,
+        0.2808,
+        0.2756,
+        0.263,
+        0.2589,
+        0.2722
+      ]
+    }
+  },
+  "cold_start": {
+    "Warm Users": {
+      "HitRate@20": 0.775,
+      "NDCG@20": 0.246
+    },
+    "Cold Users (untrained ID embedding)": {
+      "HitRate@20": 0.5811,
+      "NDCG@20": 0.1309
+    },
+    "Cold Users + Content Fallback (UNKNOWN-id embedding)": {
+      "HitRate@20": 0.7297,
+      "NDCG@20": 0.1833
+    },
+    "Cold Users + Popularity Fallback": {
+      "HitRate@20": 0.6959
+    },
+    "summary": {
+      "cold_drop_pct": 25.0,
+      "gap_recovered_pct": 76.7,
+      "n_cold_users": 148,
+      "n_warm_users": 800
+    }
+  },
+  "popularity_bias": {
+    "Gini Concentration Coefficient": 0.98,
+    "Top 10% Item Exposure Share": 1.0,
+    "Catalog Coverage Rate": 0.058
+  },
+  "diversity": [
+    {
+      "lambda_mmr": 1.0,
+      "Relevance NDCG@20": 0.1444,
+      "Intra-List Diversity (ILD)": 0.2235
+    },
+    {
+      "lambda_mmr": 0.8,
+      "Relevance NDCG@20": 0.1436,
+      "Intra-List Diversity (ILD)": 0.2412
+    },
+    {
+      "lambda_mmr": 0.5,
+      "Relevance NDCG@20": 0.1371,
+      "Intra-List Diversity (ILD)": 0.2815
+    },
+    {
+      "lambda_mmr": 0.2,
+      "Relevance NDCG@20": 0.1236,
+      "Intra-List Diversity (ILD)": 0.3058
+    },
+    {
+      "lambda_mmr": 0.0,
+      "Relevance NDCG@20": 0.0796,
+      "Intra-List Diversity (ILD)": 0.3493
+    }
+  ],
+  "latency": {
+    "Candidate Retrieval (FAISS exact IP - 5k items, top-100)": {
+      "p50_ms": 0.043,
+      "p95_ms": 0.08,
+      "p99_ms": 0.086
+    },
+    "Deep Scoring Model (DCN - 100 candidates)": {
+      "p50_ms": 0.197,
+      "p95_ms": 0.265,
+      "p99_ms": 0.288
+    }
+  }
+}

@@ -54,43 +54,10 @@ export default function App() {
     }
   };
 
+  // No hardcoded fallback metrics: every number on this dashboard comes from /api/results,
+  // which is computed by investigation.py on held-out data.
   function getFallbackData() {
-    return {
-      "models_auc": {
-        "Popularity Baseline": 0.582,
-        "Matrix Factorization": 0.694,
-        "Two-Tower Model": 0.741,
-        "Neural Collaborative Filtering": 0.778,
-        "Deep Ranking Model": 0.824
-      },
-      "negative_sampling": {
-        "Uniform Random Negatives": { "AUC": 0.684, "Recall@50": 0.412, "Convergence Epochs": 12 },
-        "In-Batch Softmax Negatives": { "AUC": 0.765, "Recall@50": 0.589, "Convergence Epochs": 6 },
-        "Popularity Hard Negatives": { "AUC": 0.792, "Recall@50": 0.634, "Convergence Epochs": 4 }
-      },
-      "cold_start": {
-        "Warm Users / Warm Items": { "HitRate@20": 0.428, "NDCG@20": 0.315 },
-        "Cold Users (Zero History)": { "HitRate@20": 0.142, "NDCG@20": 0.089 },
-        "Cold Items (New Additions)": { "HitRate@20": 0.185, "NDCG@20": 0.112 },
-        "Cold Items with Content Fallback": { "HitRate@20": 0.310, "NDCG@20": 0.224 }
-      },
-      "popularity_bias": {
-        "Gini Concentration Coefficient": 0.576,
-        "Top 10% Item Exposure Share": 0.447,
-        "Catalog Coverage Rate": 0.353
-      },
-      "diversity": [
-        { "lambda_mmr": 1.0, "Relevance NDCG@20": 0.35, "Intra-List Diversity (ILD)": 0.10 },
-        { "lambda_mmr": 0.8, "Relevance NDCG@20": 0.31, "Intra-List Diversity (ILD)": 0.43 },
-        { "lambda_mmr": 0.5, "Relevance NDCG@20": 0.25, "Intra-List Diversity (ILD)": 0.66 },
-        { "lambda_mmr": 0.2, "Relevance NDCG@20": 0.19, "Intra-List Diversity (ILD)": 0.84 },
-        { "lambda_mmr": 0.0, "Relevance NDCG@20": 0.15, "Intra-List Diversity (ILD)": 0.95 }
-      ],
-      "latency": {
-        "Candidate Retrieval (FAISS ANN - 5k items)": { "p50_ms": 0.042, "p95_ms": 0.049, "p99_ms": 0.079 },
-        "Deep Scoring Model (DCN - 100 candidates)": { "p50_ms": 0.196, "p95_ms": 0.257, "p99_ms": 0.378 }
-      }
-    };
+    return null;
   }
 
   const modelAucChartData = data?.models_auc ? Object.entries(data.models_auc).map(([name, auc]) => ({ name, AUC: auc })) : [];
@@ -166,8 +133,8 @@ export default function App() {
                 <div className="bg-gray-900/90 p-5 rounded-xl border border-[#76b900]/40 relative group nvidia-glow transition-all">
                   <div className="text-xs text-[#76b900] font-mono mb-1">STAGE 03</div>
                   <h3 className="font-bold text-gray-100 flex items-center gap-1.5"><Zap className="w-4 h-4 text-[#76b900]"/> Candidate Retrieval</h3>
-                  <p className="text-xs text-gray-400 mt-2">FAISS ANN vector similarity search over Two-Tower Dual-Encoder embeddings.</p>
-                  <div className="mt-3 text-[11px] text-[#76b900] font-mono">10,000 Candidates (&lt; 0.05ms)</div>
+                  <p className="text-xs text-gray-400 mt-2">FAISS exact inner-product search over Two-Tower Dual-Encoder embeddings.</p>
+                  <div className="mt-3 text-[11px] text-[#76b900] font-mono">Top-100 candidates (&lt; 0.1 ms)</div>
                 </div>
 
                 {/* Step 4 */}
@@ -194,7 +161,7 @@ export default function App() {
                 <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><Clock className="w-6 h-6"/></div>
                 <div>
                   <div className="text-xs text-gray-400 font-medium">Candidate Retrieval Latency</div>
-                  <div className="text-xl font-bold text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS ANN - 5k items)']?.p95_ms || 0.049} ms</div>
+                  <div className="text-xl font-bold text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS exact IP - 5k items, top-100)']?.p95_ms ?? '–'} ms</div>
                   <div className="text-[11px] text-emerald-400">FAISS Index (Sub-millisecond)</div>
                 </div>
               </div>
@@ -203,7 +170,7 @@ export default function App() {
                 <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Cpu className="w-6 h-6"/></div>
                 <div>
                   <div className="text-xs text-gray-400 font-medium">Deep Ranking Latency</div>
-                  <div className="text-xl font-bold text-gray-100">{data?.latency?.['Deep Scoring Model (DCN - 100 candidates)']?.p95_ms || 0.257} ms</div>
+                  <div className="text-xl font-bold text-gray-100">{data?.latency?.['Deep Scoring Model (DCN - 100 candidates)']?.p95_ms ?? '–'} ms</div>
                   <div className="text-[11px] text-purple-400">DCN Cross Network</div>
                 </div>
               </div>
@@ -212,8 +179,8 @@ export default function App() {
                 <div className="p-3 bg-[#76b900]/10 text-[#76b900] rounded-xl"><BarChart3 className="w-6 h-6"/></div>
                 <div>
                   <div className="text-xs text-gray-400 font-medium">Deep Ranking AUC</div>
-                  <div className="text-xl font-bold text-gray-100">0.824</div>
-                  <div className="text-[11px] text-[#76b900]">+24% over MF Baseline</div>
+                  <div className="text-xl font-bold text-gray-100">{data?.models_auc?.['Deep Ranking Model'] ?? '–'}</div>
+                  <div className="text-[11px] text-[#76b900]">vs popularity baseline {data?.models_auc?.['Popularity Baseline'] ?? '–'}</div>
                 </div>
               </div>
 
@@ -221,7 +188,7 @@ export default function App() {
                 <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><ShieldAlert className="w-6 h-6"/></div>
                 <div>
                   <div className="text-xs text-gray-400 font-medium">Catalog Gini Index</div>
-                  <div className="text-xl font-bold text-gray-100">{data?.popularity_bias?.['Gini Concentration Coefficient'] || 0.576}</div>
+                  <div className="text-xl font-bold text-gray-100">{data?.popularity_bias?.['Gini Concentration Coefficient'] ?? '–'}</div>
                   <div className="text-[11px] text-amber-400">Moderate Popularity Bias</div>
                 </div>
               </div>
@@ -234,7 +201,7 @@ export default function App() {
                   <Server className="w-4 h-4 text-[#76b900]" /> Stage 1: Candidate Generation (Retrieval)
                 </h3>
                 <p className="text-xs text-gray-300 leading-relaxed">
-                  In Merlin's architecture, candidate generation reduces millions of items to ~10,000 relevant candidates. The **Two-Tower Dual-Encoder** model maps users and item metadata into a shared high-dimensional vector space using cosine distance. Items are indexed into **FAISS vector indices** for ultra-fast GPU/CPU Approximate Nearest Neighbor (ANN) search.
+                  In Merlin's architecture, candidate generation reduces the catalog to a small candidate set (top-100 of 5,000 items here). The **Two-Tower Dual-Encoder** model maps users and item metadata into a shared high-dimensional vector space using cosine distance. Items are indexed into **FAISS vector indices** (exact IndexFlatIP here; IVF/HNSW approximate indexes at larger scale).
                 </p>
               </div>
 
@@ -320,11 +287,11 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800 text-gray-200">
-                      {data?.cold_start && Object.entries(data.cold_start).map(([entity, m]) => (
+                      {data?.cold_start && Object.entries(data.cold_start).filter(([k]) => k !== 'summary').map(([entity, m]) => (
                         <tr key={entity} className="hover:bg-gray-800/30 transition-all">
                           <td className="p-3 font-medium">{entity}</td>
                           <td className="p-3 text-blue-400 font-semibold">{m['HitRate@20']}</td>
-                          <td className="p-3">{m['NDCG@20']}</td>
+                          <td className="p-3">{m['NDCG@20'] ?? '–'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -360,11 +327,11 @@ export default function App() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-gray-900/80 p-4 rounded-xl border border-gray-800">
-                  <h4 className="text-xs font-bold text-emerald-400 mb-2">Stage 1: FAISS ANN Candidate Retrieval (5,000 Catalog)</h4>
+                  <h4 className="text-xs font-bold text-emerald-400 mb-2">Stage 1: FAISS Candidate Retrieval (5,000 Catalog)</h4>
                   <div className="space-y-2 text-xs">
-                    <div className="flex justify-between"><span>p50 Latency:</span> <span className="font-mono text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS ANN - 5k items)']?.p50_ms} ms</span></div>
-                    <div className="flex justify-between"><span>p95 Latency:</span> <span className="font-mono text-emerald-400 font-bold">{data?.latency?.['Candidate Retrieval (FAISS ANN - 5k items)']?.p95_ms} ms</span></div>
-                    <div className="flex justify-between"><span>p99 Latency:</span> <span className="font-mono text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS ANN - 5k items)']?.p99_ms} ms</span></div>
+                    <div className="flex justify-between"><span>p50 Latency:</span> <span className="font-mono text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS exact IP - 5k items, top-100)']?.p50_ms} ms</span></div>
+                    <div className="flex justify-between"><span>p95 Latency:</span> <span className="font-mono text-emerald-400 font-bold">{data?.latency?.['Candidate Retrieval (FAISS exact IP - 5k items, top-100)']?.p95_ms} ms</span></div>
+                    <div className="flex justify-between"><span>p99 Latency:</span> <span className="font-mono text-gray-100">{data?.latency?.['Candidate Retrieval (FAISS exact IP - 5k items, top-100)']?.p99_ms} ms</span></div>
                   </div>
                 </div>
 
@@ -439,7 +406,7 @@ export default function App() {
                 <div className="glass-panel p-5 rounded-2xl md:col-span-2 space-y-3">
                   <h3 className="text-sm font-bold text-gray-200 border-b border-gray-800 pb-2 flex justify-between">
                     <span>Top Recommendations (Stage 2 DCN Scoring)</span>
-                    <span className="text-xs font-normal text-emerald-400">10,000 Candidates Filtered → Top 20</span>
+                    <span className="text-xs font-normal text-emerald-400">100 Candidates → Top 20</span>
                   </h3>
 
                   <div className="overflow-y-auto max-h-96 pr-2 space-y-2">
